@@ -21,6 +21,11 @@ def document_model_to_entity(model: DocumentModel) -> Document:
         tags=model.tags or [],
         uploaded_by=model.uploaded_by,
         organization_id=model.organization_id,
+        source_type=model.source_type,
+        source_id=model.source_id,
+        source_item_id=model.source_item_id,
+        source_version=model.source_version,
+        allowed_principals=model.allowed_principals or [],
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -42,6 +47,11 @@ def document_entity_to_model(entity: Document) -> DocumentModel:
         tags=entity.tags,
         uploaded_by=entity.uploaded_by,
         organization_id=entity.organization_id,
+        source_type=entity.source_type,
+        source_id=entity.source_id,
+        source_item_id=entity.source_item_id,
+        source_version=entity.source_version,
+        allowed_principals=entity.allowed_principals,
         created_at=entity.created_at,
         updated_at=entity.updated_at,
     )

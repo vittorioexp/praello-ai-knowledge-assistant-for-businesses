@@ -15,6 +15,8 @@ class Permission(str, Enum):
     KNOWLEDGE_ADMIN = "knowledge:admin"
     AGENT_EXECUTE = "agent:execute"
     AGENT_APPROVE = "agent:approve"
+    CONNECTORS_READ = "connectors:read"
+    CONNECTORS_MANAGE = "connectors:manage"
     ADMIN_ALL = "admin:all"
 
 
@@ -64,6 +66,8 @@ class Role(str, Enum):
                     Permission.KNOWLEDGE_ADMIN,
                     Permission.AGENT_EXECUTE,
                     Permission.AGENT_APPROVE,
+                    Permission.CONNECTORS_READ,
+                    Permission.CONNECTORS_MANAGE,
                 }
             ),
             Role.SUPER_ADMIN: frozenset(Permission),

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: RedisDsn | str = "redis://localhost:6379/0"
+    rate_limit_requests: int = 120
+    rate_limit_window_seconds: int = 60
 
     # Qdrant
     qdrant_host: str = "localhost"
@@ -61,12 +63,41 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
 
     # Uploads
-    upload_max_size_mb: int = 50
+    upload_max_size_mb: int = 5120
     upload_dir: str = "/app/uploads"
+    storage_backend: Literal["local", "s3"] = "local"
+    s3_bucket: str = "enterprise-ai-documents"
+    s3_region: str = ""
+    s3_endpoint_url: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+
+    # Connector OAuth
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
+    microsoft_oauth_client_id: str = ""
+    microsoft_oauth_client_secret: str = ""
+    microsoft_oauth_redirect_uri: str = ""
+    oidc_issuer_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    saml_enabled: bool = False
+    saml_idp_entity_id: str = ""
+    saml_idp_sso_url: str = ""
+    saml_idp_x509_cert: str = ""
+    saml_sp_entity_id: str = "praello-ai"
+    saml_acs_url: str = ""
+    scim_bearer_token: str = ""
+    scim_organization_id: str = ""
 
     # Chunking
     chunk_size: int = 1000
     chunk_overlap: int = 200
+    embedding_batch_size: int = 128
+    vector_upsert_batch_size: int = 256
+    max_ingestion_attempts: int = 5
 
     # RAG
     rag_top_k: int = 10

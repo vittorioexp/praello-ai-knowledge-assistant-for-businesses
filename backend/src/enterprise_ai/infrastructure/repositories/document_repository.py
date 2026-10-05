@@ -27,12 +27,40 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         await self._session.refresh(model)
         return document_model_to_entity(model)
 
-    async def get_by_id(self, document_id: UUID) -> Document | None:
+    async def get_by_id(
+        self, document_id: UUID, *, organization_id: UUID | None = None
+    ) -> Document | None:
+        query = select(DocumentModel).where(DocumentModel.id == document_id)
+        if organization_id is not None:
+            query = query.where(DocumentModel.organization_id == organization_id)
+        result = await self._session.execute(query)
+        model = result.scalar_one_or_none()
+        return document_model_to_entity(model) if model else None
+
+    async def get_by_source(self, source_id: str, source_item_id: str) -> Document | None:
         result = await self._session.execute(
-            select(DocumentModel).where(DocumentModel.id == document_id)
+            select(DocumentModel).where(
+                DocumentModel.source_id == source_id,
+                DocumentModel.source_item_id == source_item_id,
+            )
         )
         model = result.scalar_one_or_none()
         return document_model_to_entity(model) if model else None
+
+    async def delete_by_source(self, source_id: str, source_item_id: str) -> UUID | None:
+        result = await self._session.execute(
+            select(DocumentModel).where(
+                DocumentModel.source_id == source_id,
+                DocumentModel.source_item_id == source_item_id,
+            )
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        document_id = model.id
+        await self._session.delete(model)
+        await self._session.flush()
+        return document_id
 
     async def update(self, document: Document) -> Document:
         result = await self._session.execute(
@@ -54,6 +82,11 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         model.metadata_ = document.metadata
         model.tags = document.tags
         model.organization_id = document.organization_id
+        model.source_type = document.source_type
+        model.source_id = document.source_id
+        model.source_item_id = document.source_item_id
+        model.source_version = document.source_version
+        model.allowed_principals = document.allowed_principals
         model.updated_at = document.updated_at
         await self._session.flush()
         await self._session.refresh(model)
@@ -74,6 +107,7 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         self,
         *,
         uploaded_by: UUID | None = None,
+        organization_id: UUID | None = None,
         status: str | None = None,
         tags: list[str] | None = None,
         skip: int = 0,
@@ -82,6 +116,8 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         query = select(DocumentModel)
         if uploaded_by:
             query = query.where(DocumentModel.uploaded_by == uploaded_by)
+        if organization_id is not None:
+            query = query.where(DocumentModel.organization_id == organization_id)
         if status:
             query = query.where(DocumentModel.status == status)
         if tags:

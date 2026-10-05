@@ -4,6 +4,22 @@ Production-ready enterprise SaaS platform for AI-powered knowledge management, R
 
 **Repository:** [github.com/vittorioexp/praello-ai-knowledge-assistant-for-businesses](https://github.com/vittorioexp/praello-ai-knowledge-assistant-for-businesses)
 
+## Large-scale collections
+
+The platform is designed for very large, multi-terabyte enterprise repositories when
+deployed with object storage (S3 or MinIO), PostgreSQL, Redis, and a
+properly sized Qdrant cluster. Files are streamed instead of loaded fully into API memory;
+ingestion runs asynchronously through Redis Streams, supports bounded retries and DLQ
+replay, and can be scaled with independent workers. Connector sync is incremental for
+Google Drive and SharePoint, while embeddings and vector upserts are batched.
+
+For this scale, use S3 or MinIO rather than the local upload volume, separate ingestion
+workers from API instances, size Qdrant for the resulting vector count, and enable
+PostgreSQL/Redis high availability. The repository contains the scalability mechanisms,
+but capacity is an infrastructure sizing concern, not a benchmark guarantee: throughput,
+index size, embedding cost, recovery time, and query latency must be validated with a
+representative load test before production rollout.
+
 ## Architecture
 
 ```mermaid
@@ -84,7 +100,7 @@ graph TB
 
 **Backend:** Python 3.13, FastAPI, LangGraph, LangChain, OpenAI, Qdrant, PostgreSQL, SQLAlchemy, Alembic, Redis, Structlog
 
-**Frontend:** Next.js 15, TypeScript, Tailwind CSS, shadcn/ui
+**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS, lucide-react
 
 **Infrastructure:** Docker Compose, Nginx, GitHub Actions, Pre-commit, Ruff, Black, Pytest
 
@@ -129,6 +145,47 @@ uvicorn enterprise_ai.main:app --reload
 cd backend
 alembic upgrade head
 ```
+
+### Storage and ingestion operations
+
+Uploads use the local volume by default. For S3 or MinIO, set these variables in `.env`:
+
+```dotenv
+STORAGE_BACKEND=s3
+S3_BUCKET=enterprise-ai-documents
+S3_REGION=eu-west-1
+S3_ENDPOINT_URL=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+UPLOAD_MAX_SIZE_MB=5120
+MAX_INGESTION_ATTEMPTS=5
+```
+
+The `ingestion-worker` service consumes Redis Streams jobs independently from the API. Jobs that fail after the configured number of attempts are written to `enterprise_ai:ingestion:dead-letter` for inspection and replay tooling.
+
+The optional `connector-worker` runs external Drive/SharePoint synchronization. Configure `CONNECTOR_ORGANIZATION_ID` and `CONNECTOR_UPLOADED_BY` before starting Compose; its default interval is 15 minutes.
+
+### Enterprise identity and access
+
+OIDC and SAML SSO issue the platform's local JWT after validating the external identity. Configure SAML with the IdP entity ID, SSO URL, signing certificate, SP entity ID, and ACS URL. SCIM 2.0 provisioning is available under `/api/v1/scim/v2.0` and supports users, groups, filtering, pagination, replacement, patch operations, and deactivation.
+
+Document ACLs are enforced during vector retrieval and support users, groups, nested SCIM group membership, organization links, and public links. Group membership resolution is tenant-scoped and cached briefly for query performance.
+
+Example identity settings:
+
+```dotenv
+OIDC_ENABLED=false
+SAML_ENABLED=false
+SAML_IDP_ENTITY_ID=
+SAML_IDP_SSO_URL=
+SAML_IDP_X509_CERT=
+SAML_SP_ENTITY_ID=praello-ai
+SAML_ACS_URL=https://assistant.example.com/api/v1/auth/sso/saml/acs
+SCIM_BEARER_TOKEN=
+SCIM_ORGANIZATION_ID=
+```
+
+For frontend dependency verification, run `npm audit --omit=dev`, `npm run type-check`, and `npm run build` from `frontend/`. Production runtime dependencies currently report no known npm vulnerabilities.
 
 ## Project Structure
 

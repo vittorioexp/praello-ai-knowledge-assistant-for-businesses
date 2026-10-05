@@ -82,6 +82,60 @@ services:
     networks:
       - praello-ai-network
 
+  ingestion-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: praello-ai-ingestion-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-enterprise_ai}:${POSTGRES_PASSWORD:-enterprise_ai_secret}@postgres:5432/${POSTGRES_DB:-enterprise_ai}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      INGESTION_CONSUMER_NAME: worker-1
+    volumes:
+      - upload_data:/app/uploads
+    command: ["python", "-m", "enterprise_ai.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - praello-ai-network
+
+  connector-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: praello-ai-connector-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-enterprise_ai}:${POSTGRES_PASSWORD:-enterprise_ai_secret}@postgres:5432/${POSTGRES_DB:-enterprise_ai}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      CONNECTOR_ORGANIZATION_ID: ${CONNECTOR_ORGANIZATION_ID:?set CONNECTOR_ORGANIZATION_ID}
+      CONNECTOR_UPLOADED_BY: ${CONNECTOR_UPLOADED_BY:?set CONNECTOR_UPLOADED_BY}
+      CONNECTOR_SYNC_INTERVAL_SECONDS: ${CONNECTOR_SYNC_INTERVAL_SECONDS:-900}
+    volumes:
+      - upload_data:/app/uploads
+    command: ["python", "-m", "enterprise_ai.connector_worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - praello-ai-network
+
   frontend:
     build:
       context: ./frontend

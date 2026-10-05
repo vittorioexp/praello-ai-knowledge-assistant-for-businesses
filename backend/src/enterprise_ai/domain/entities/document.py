@@ -25,6 +25,11 @@ class Document(Entity):
     tags: list[str] = Field(default_factory=list)
     uploaded_by: UUID
     organization_id: UUID | None = None
+    source_type: str = "upload"
+    source_id: str | None = None
+    source_item_id: str | None = None
+    source_version: str | None = None
+    allowed_principals: list[str] = Field(default_factory=list)
 
     def mark_processing(self) -> None:
         self.status = DocumentStatus.PROCESSING

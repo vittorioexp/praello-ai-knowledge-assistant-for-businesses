@@ -62,6 +62,12 @@ class InMemoryVectorStore(VectorStore):
             point_tags = payload.get("tags", [])
             if not any(t in point_tags for t in tags):
                 return False
+        principals = filters.get("acl_principals") or ([filters["acl_principal"]] if filters.get("acl_principal") else [])
+        if principals:
+            if payload.get("acl_enforced") and not any(
+                principal in payload.get("allowed_principals", []) for principal in principals
+            ):
+                return False
         return True
 
     async def search(

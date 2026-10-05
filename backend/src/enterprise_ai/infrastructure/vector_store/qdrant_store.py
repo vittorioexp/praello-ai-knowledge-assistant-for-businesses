@@ -31,6 +31,7 @@ class QdrantVectorStore(VectorStore):
             port=settings.qdrant_port,
         )
         self._collection = settings.qdrant_collection
+        self._upsert_batch_size = settings.vector_upsert_batch_size
 
     async def ensure_collection(self, vector_size: int) -> None:
         exists = await self._client.collection_exists(self._collection)
@@ -64,13 +65,19 @@ class QdrantVectorStore(VectorStore):
                     "organization_id": document_metadata.get("organization_id"),
                     "document_type": document_metadata.get("document_type"),
                     "original_filename": document_metadata.get("original_filename"),
+                    "allowed_principals": document_metadata.get("allowed_principals", []),
+                    "acl_enforced": document_metadata.get("acl_enforced", False),
                     **chunk.metadata,
                 },
             )
             for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
 
-        await self._client.upsert(collection_name=self._collection, points=points)
+        for start in range(0, len(points), self._upsert_batch_size):
+            await self._client.upsert(
+                collection_name=self._collection,
+                points=points[start : start + self._upsert_batch_size],
+            )
         logger.info("qdrant_upsert", document_id=str(chunks[0].document_id), count=len(points))
         return len(points)
 
@@ -165,5 +172,17 @@ class QdrantVectorStore(VectorStore):
         if tags := filters.get("tags"):
             conditions.append(
                 FieldCondition(key="tags", match=MatchAny(any=tags))
+            )
+        acl_principals = filters.get("acl_principals") or ([filters["acl_principal"]] if filters.get("acl_principal") else [])
+        if acl_principals:
+            return Filter(
+                must=conditions,
+                should=[
+                    FieldCondition(key="acl_enforced", match=MatchValue(value=False)),
+                    FieldCondition(
+                        key="allowed_principals",
+                        match=MatchAny(any=acl_principals),
+                    ),
+                ],
             )
         return Filter(must=conditions)

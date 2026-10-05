@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from enterprise_ai.application.services.agent_service import AgentService
+from enterprise_ai.application.services.acl_resolver import ACLResolver
 from enterprise_ai.application.services.auth_service import AuthService
 from enterprise_ai.application.services.document_service import DocumentService
 from enterprise_ai.application.services.health_service import HealthService
@@ -28,12 +29,16 @@ from enterprise_ai.domain.repositories.vector_store import VectorStore
 from enterprise_ai.infrastructure.cache.redis_client import RedisClient
 from enterprise_ai.infrastructure.config.settings import Settings, get_settings
 from enterprise_ai.infrastructure.database.session import Database
+from enterprise_ai.infrastructure.queue.ingestion_queue import IngestionQueue
 from enterprise_ai.infrastructure.repositories.document_repository import SQLAlchemyDocumentRepository
 from enterprise_ai.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 from enterprise_ai.infrastructure.security.jwt import JWTService
 from enterprise_ai.infrastructure.storage.file_storage import FileStorageService
+from enterprise_ai.infrastructure.storage.s3_object_storage import S3ObjectStorage
+from enterprise_ai.domain.repositories.object_storage import ObjectStorage
 
 security = HTTPBearer(auto_error=False)
+_acl_resolver = ACLResolver()
 
 
 def get_app_settings() -> Settings:
@@ -46,6 +51,10 @@ def get_database(request: Request) -> Database:
 
 def get_redis(request: Request) -> RedisClient:
     return request.app.state.redis
+
+
+def get_ingestion_queue(request: Request) -> IngestionQueue:
+    return request.app.state.ingestion_queue
 
 
 async def get_db_session(
@@ -95,6 +104,20 @@ def get_file_storage(
     return FileStorageService(settings)
 
 
+def get_object_storage(
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> ObjectStorage | None:
+    if settings.storage_backend == "s3":
+        return S3ObjectStorage(
+            settings.s3_bucket,
+            region_name=settings.s3_region or None,
+            endpoint_url=settings.s3_endpoint_url or None,
+            access_key_id=settings.s3_access_key_id or None,
+            secret_access_key=settings.s3_secret_access_key or None,
+        )
+    return None
+
+
 def get_vector_store(
     request: Request,
 ) -> VectorStore:
@@ -118,26 +141,32 @@ def get_ingestion_service(
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     chunking_service: Annotated[ChunkingService, Depends(get_chunking_service)],
+    object_storage: Annotated[ObjectStorage | None, Depends(get_object_storage)],
 ) -> IngestionService:
     return IngestionService(
         SQLAlchemyDocumentRepository(session),
         embedding_service,
         vector_store,
         chunking_service,
+        object_storage,
     )
 
 
 def get_document_service(
+    settings: Annotated[Settings, Depends(get_app_settings)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     file_storage: Annotated[FileStorageService, Depends(get_file_storage)],
     ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
+    object_storage: Annotated[ObjectStorage | None, Depends(get_object_storage)],
 ) -> DocumentService:
     return DocumentService(
         SQLAlchemyDocumentRepository(session),
         file_storage,
         ingestion_service,
         vector_store,
+        object_storage,
+        settings.upload_max_size_mb * 1024 * 1024,
     )
 
 
@@ -147,6 +176,7 @@ def get_llm_service(request: Request) -> LLMService:
 
 def get_rag_service(
     settings: Annotated[Settings, Depends(get_app_settings)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
     llm_service: Annotated[LLMService, Depends(get_llm_service)],
@@ -161,6 +191,8 @@ def get_rag_service(
         llm_service=llm_service,
         injection_guard=PromptInjectionGuard(),
         settings=settings,
+        acl_resolver=_acl_resolver,
+        session=session,
     )
 
 

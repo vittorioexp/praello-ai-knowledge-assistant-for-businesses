@@ -13,7 +13,10 @@ from enterprise_ai.infrastructure.database.session import Base
 
 # Import all models for autogenerate
 from enterprise_ai.infrastructure.database.models.document import DocumentModel  # noqa: F401
+from enterprise_ai.infrastructure.database.models.connector_account import ConnectorAccountModel  # noqa: F401
 from enterprise_ai.infrastructure.database.models.user import UserModel  # noqa: F401
+from enterprise_ai.infrastructure.database.models.scim_group import ScimGroupModel  # noqa: F401
+from enterprise_ai.infrastructure.database.models.audit_event import AuditEventModel  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

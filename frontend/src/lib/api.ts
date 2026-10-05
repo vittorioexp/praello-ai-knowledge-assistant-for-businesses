@@ -60,6 +60,16 @@ export interface LLMUsageResponse {
   by_model: Record<string, LLMModelUsage>;
 }
 
+export interface ConnectorAccountResponse {
+  id: string;
+  provider: "google_drive" | "sharepoint";
+  external_account_id: string;
+  provider_metadata: Record<string, unknown>;
+  is_active: boolean;
+  token_expires_at: string | null;
+  last_sync_at: string | null;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -129,4 +139,12 @@ export const api = {
     }),
 
   llmUsage: () => request<LLMUsageResponse>("/llm/usage"),
+
+  listConnectors: () => request<ConnectorAccountResponse[]>("/connectors"),
+
+  connectorAuthorizationUrl: (provider: ConnectorAccountResponse["provider"]) =>
+    request<{ authorization_url: string }>(`/connectors/${provider}/authorize`),
+
+  revokeConnector: (id: string) =>
+    request<void>(`/connectors/${id}`, { method: "DELETE" }),
 };

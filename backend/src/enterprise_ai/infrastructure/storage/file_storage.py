@@ -1,6 +1,7 @@
 """Local filesystem storage for uploaded documents."""
 
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import aiofiles
@@ -35,6 +36,45 @@ class FileStorageService:
             await f.write(content)
         logger.info("file_saved", path=str(file_path), size=len(content))
         return str(file_path)
+
+    async def save_stream(
+        self,
+        *,
+        filename: str,
+        read_chunk: Callable[[int], Awaitable[bytes]],
+    ) -> tuple[str, int]:
+        """Persist an upload incrementally and return its path and byte count."""
+        self.ensure_upload_dir()
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        file_path = self._base_dir / unique_name
+        total_size = 0
+        try:
+            async with aiofiles.open(file_path, "wb") as file_handle:
+                while chunk := await read_chunk(1024 * 1024):
+                    total_size += len(chunk)
+                    if total_size > self._max_size:
+                        raise ValidationError(
+                            f"File exceeds maximum size of {self._max_size // (1024 * 1024)}MB"
+                        )
+                    await file_handle.write(chunk)
+        except Exception:
+            if file_path.exists():
+                file_path.unlink()
+            raise
+        logger.info("file_saved", path=str(file_path), size=total_size)
+        return str(file_path), total_size
+
+    async def save_iterator(self, *, filename: str, content: AsyncIterator[bytes]) -> tuple[str, int]:
+        """Persist an async byte iterator without buffering it in memory."""
+        iterator = content.__aiter__()
+
+        async def read_chunk(_size: int) -> bytes:
+            try:
+                return await iterator.__anext__()
+            except StopAsyncIteration:
+                return b""
+
+        return await self.save_stream(filename=filename, read_chunk=read_chunk)
 
     async def delete(self, file_path: str) -> None:
         """Remove a stored file if it exists."""

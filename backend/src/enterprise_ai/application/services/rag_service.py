@@ -9,12 +9,14 @@ from enterprise_ai.ai.rag.hybrid_retriever import HybridRetriever
 from enterprise_ai.ai.rag.query_rewriter import MultiQueryExpander, QueryRewriter
 from enterprise_ai.ai.rag.reranker import RerankerService
 from enterprise_ai.application.dto.rag import RAGQueryRequestDTO, RAGQueryResponseDTO, SourceCitationDTO
+from enterprise_ai.application.services.acl_resolver import ACLResolver
 from enterprise_ai.domain.entities.retrieved_chunk import RetrievedChunk
 from enterprise_ai.domain.entities.user import User
 from enterprise_ai.domain.exceptions import ValidationError
 from enterprise_ai.domain.repositories.llm_service import LLMService
 from enterprise_ai.infrastructure.config.settings import Settings
 from enterprise_ai.infrastructure.logging.setup import get_logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -38,6 +40,8 @@ class RAGService:
         llm_service: LLMService,
         injection_guard: PromptInjectionGuard,
         settings: Settings,
+        acl_resolver: ACLResolver | None = None,
+        session: AsyncSession | None = None,
     ) -> None:
         self._retriever = hybrid_retriever
         self._rewriter = query_rewriter
@@ -48,6 +52,8 @@ class RAGService:
         self._llm = llm_service
         self._guard = injection_guard
         self._settings = settings
+        self._acl_resolver = acl_resolver
+        self._session = session
 
     async def query(
         self,
@@ -58,7 +64,7 @@ class RAGService:
         if not self._guard.is_safe(request.query):
             raise ValidationError("Query blocked by safety filter")
 
-        filters = self._build_filters(request, user)
+        filters = await self._build_filters(request, user)
         rewritten = await self._rewriter.rewrite(request.query)
         queries = [rewritten]
 
@@ -118,8 +124,7 @@ class RAGService:
             temperature=0.0,
         )
 
-    @staticmethod
-    def _build_filters(request: RAGQueryRequestDTO, user: User) -> dict[str, Any]:
+    async def _build_filters(self, request: RAGQueryRequestDTO, user: User) -> dict[str, Any]:
         filters: dict[str, Any] = {}
         if request.document_id:
             filters["document_id"] = request.document_id
@@ -127,6 +132,18 @@ class RAGService:
             filters["tags"] = request.tags
         if user.organization_id:
             filters["organization_id"] = str(user.organization_id)
+        if self._acl_resolver is not None and self._session is not None:
+            filters["acl_principals"] = await self._acl_resolver.principals(
+                self._session, user.organization_id, user.id, str(user.email)
+            )
+        else:
+            filters["acl_principals"] = {
+                str(user.email),
+                str(user.id),
+                "link:anyone",
+                "link:authenticated",
+                "link:organization",
+            }
         return filters
 
     @staticmethod

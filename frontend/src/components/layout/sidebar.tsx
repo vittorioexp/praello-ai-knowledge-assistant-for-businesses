@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Search,
+  Cable,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearTokens } from "@/lib/auth";
@@ -20,6 +21,7 @@ const nav = [
   { href: "/dashboard/knowledge", label: "Knowledge", icon: Search },
   { href: "/dashboard/agent", label: "Agent", icon: Bot },
   { href: "/dashboard/llm", label: "LLMOps", icon: DollarSign },
+  { href: "/dashboard/connectors", label: "Connectors", icon: Cable },
 ];
 
 export function Sidebar() {

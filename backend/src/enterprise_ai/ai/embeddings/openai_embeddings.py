@@ -26,6 +26,7 @@ class OpenAIEmbeddingService(EmbeddingService):
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
         self._model = settings.openai_embedding_model
         self._vector_size = _EMBEDDING_DIMENSIONS.get(self._model, 1536)
+        self._batch_size = settings.embedding_batch_size
 
     @property
     def vector_size(self) -> int:
@@ -34,10 +35,12 @@ class OpenAIEmbeddingService(EmbeddingService):
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        response = await self._client.embeddings.create(
-            model=self._model,
-            input=texts,
-        )
-        embeddings = [item.embedding for item in response.data]
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            response = await self._client.embeddings.create(
+                model=self._model,
+                input=texts[start : start + self._batch_size],
+            )
+            embeddings.extend(item.embedding for item in response.data)
         logger.info("embeddings_generated", count=len(embeddings), model=self._model)
         return embeddings

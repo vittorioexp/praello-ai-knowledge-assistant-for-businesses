@@ -9,12 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from enterprise_ai import __version__
 from enterprise_ai.api.middleware.exception_handlers import register_exception_handlers
 from enterprise_ai.api.middleware.logging import RequestLoggingMiddleware
+from enterprise_ai.api.middleware.rate_limit import RateLimitMiddleware
 from enterprise_ai.api.routes import api_v1_router
 from enterprise_ai.domain.repositories.embedding_service import EmbeddingService
 from enterprise_ai.domain.repositories.vector_store import VectorStore
 from enterprise_ai.infrastructure.cache.redis_client import RedisClient
 from enterprise_ai.infrastructure.config.settings import Settings, get_settings
 from enterprise_ai.infrastructure.database.session import Database
+from enterprise_ai.infrastructure.queue.ingestion_queue import IngestionQueue
 from langgraph.checkpoint.memory import MemorySaver
 
 from enterprise_ai.infrastructure.factories.ai_factory import (
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await vector_store.ensure_collection(embedding_service.vector_size)
     except Exception as exc:
         logger.warning("vector_store_init_skipped", error=str(exc))
+    await app.state.ingestion_queue.ensure_group()
 
     yield
 
@@ -72,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.database = Database(settings)
     app.state.redis = RedisClient(settings)
+    app.state.ingestion_queue = IngestionQueue(app.state.redis.client)
     app.state.embedding_service = create_embedding_service(settings)
     app.state.vector_store = create_vector_store(settings)
     app.state.llm_tracker = create_llm_tracker()
@@ -90,6 +94,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware,
+        redis=app.state.redis,
+        settings=settings,
+    )
 
     register_exception_handlers(app)
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
